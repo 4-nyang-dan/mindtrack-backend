@@ -19,8 +19,7 @@ public class ScreenshotImage {
     @JoinColumn(name = "user_id")  // FK 컬럼명 → users.id(Long) 참조
     private Users user;
 
-    @Column(columnDefinition = "TEXT")
-    private String imageHash;
+    private long imageHash;
 
     private int visitCnt;
 
@@ -50,7 +49,7 @@ public class ScreenshotImage {
     }
 
     @Builder
-    public ScreenshotImage(Users user, String imageHash, int visitCnt, String s3url, LocalDateTime capturedAt, LocalDateTime lastVisitedAt, AnalysisStatus analysisStatus){
+    public ScreenshotImage(Users user, Long imageHash, int visitCnt, String s3url, LocalDateTime capturedAt, LocalDateTime lastVisitedAt, AnalysisStatus analysisStatus){
         this.user = user;
         this.imageHash = imageHash;
         this.visitCnt = visitCnt;

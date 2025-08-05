@@ -13,7 +13,5 @@ public interface ScreenshotImageRepository extends JpaRepository<ScreenshotImage
     Optional<ScreenshotImage> findTopByUser_IdOrderByLastVisitedAtDesc(Long userId);
 
     // 동일 해시 이미지
-    Optional<ScreenshotImage> findTopByUser_IdAndImageHash(Long userId, String imageHash);
-
-
+    Optional<ScreenshotImage> findTopByUser_IdAndId(Long userId, Long imageId);
 }

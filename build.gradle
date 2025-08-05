@@ -24,6 +24,8 @@ repositories {
 }
 
 dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    implementation 'org.apache.commons:commons-pool2'
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.8'
     //implementation files('libs/JImageHash-patched-no-javafx-1.0.0.jar')
     //implementation 'dev.brachtendorf:JImageHash:1.0.0'

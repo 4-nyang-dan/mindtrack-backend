@@ -21,6 +21,13 @@ public class ScreenshotController {
 
     private final AdaptiveSamplingService samplingService;
 
+    /**
+     * 프론트로부터 받은 사진들을 받아 샘플링을 처리하는 컨트롤러
+     * @param image 들어오는 이미지
+     * @param userId 사용자 아이디
+     * @return ResponseEntity
+     * @throws IOException
+     */
     @PostMapping(value = "/upload-screenshot", consumes = "multipart/form-data")
     @Operation(summary = "스크린샷 업로드 및 샘플링 처리")
     public ResponseEntity<Map<String, Object>> upload(
