@@ -21,6 +21,7 @@ public class SecurityConfig {
         @Bean
         public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
                 http
+                                .csrf(csrf -> csrf.disable())
                                 .authorizeHttpRequests(auth -> auth
                                                 .requestMatchers(
                                                                 "/swagger-ui/**",
@@ -32,9 +33,7 @@ public class SecurityConfig {
                                                 .permitAll()
                                                 .anyRequest().authenticated());
                 http.csrf(csrf -> csrf.disable());
-                http.sessionManagement((session) ->
-                        session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
-                );
+                http.sessionManagement((session) -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED));
                 http.addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
                 return http.build();
