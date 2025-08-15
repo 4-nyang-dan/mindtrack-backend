@@ -23,9 +23,6 @@ public class ScreenshotImage {
 
     private int visitCnt;
 
-    @Column(columnDefinition = "TEXT")
-    private String s3url;
-
     private LocalDateTime capturedAt;
 
     private LocalDateTime lastVisitedAt;
@@ -49,11 +46,10 @@ public class ScreenshotImage {
     }
 
     @Builder
-    public ScreenshotImage(Users user, Long imageHash, int visitCnt, String s3url, LocalDateTime capturedAt, LocalDateTime lastVisitedAt, AnalysisStatus analysisStatus){
+    public ScreenshotImage(Users user, Long imageHash, int visitCnt, LocalDateTime capturedAt, LocalDateTime lastVisitedAt, AnalysisStatus analysisStatus){
         this.user = user;
         this.imageHash = imageHash;
         this.visitCnt = visitCnt;
-        this.s3url = s3url;
         this.capturedAt = capturedAt;
         this.lastVisitedAt = lastVisitedAt;
         this.analysisStatus = analysisStatus;
