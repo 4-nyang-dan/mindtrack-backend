@@ -22,6 +22,12 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+
+// ===========  AI 요청 재분석시 패딩 작업 추가  ============
+// prevImageId로 Redis 원본을 덮어써야 워커가 DB에서 
+// 그 행을 PENDING으로 집었을 때, 정확한 원본을 읽어 분석할 수 있음
 @Service
 @Slf4j
 @RequiredArgsConstructor
@@ -98,13 +104,21 @@ public class AdaptiveSamplingService {
 
                             // 최근 방문 시간 및 방문도를 높인다.
                             prevScreenshotImage.updateLastVisited(LocalDateTime.now());
+
+                            // 재분석시 DB 의 AnalysisStatus 를 PENDING 상태로 리셋 (그래야 워커가 다시 집어감)
+                            prevScreenshotImage.updateResult(null, AnalysisStatus.PENDING);
                             screenshotImageRepository.save(prevScreenshotImage);
 
                             // Redis에 저장(캐시 추가)
-                            screenshotImageCacheService.cacheRecentImageHash(
+                            // 방금 들어온 "원본"을 기존 이미지ID 키로 Redis에 덮어쓰기
+                            byte[] originalBytesForReanalysis = imageToBytes(image); // 이미 있는 유틸 재사용
+                            screenshotImageCacheService.cacheOriginalImage(
                                     user.getId(),
                                     prevScreenshotImage.getId(),
-                                    prevScreenshotImage.getImageHash());
+                                    // prevScreenshotImage.getImageHash()
+                                    originalBytesForReanalysis);
+                            log.info("[재분석 예약] userId={}, prevImageId={}, status=PENDING 로 전환 + Redis 원본 덮어쓰기 완료",
+                                    user.getId(), prevScreenshotImage.getId());
 
                             // AI 재분석 요청
                             return ResponseEntity.ok(Map.of(
@@ -154,10 +168,31 @@ public class AdaptiveSamplingService {
         }
     }
 
+    // 썸네일(축소/압축) 바이트 생성 – 메모리 절약용
+    private byte[] toThumbnailBytes(BufferedImage src) throws IOException {
+        int targetW = 480; // 필요에 맞게 조정 가능
+        int w = src.getWidth(), h = src.getHeight();
+        int newW = Math.max(1, targetW);
+        int newH = Math.max(1, (int) Math.round((double) h * newW / Math.max(1, w)));
+
+        BufferedImage scaled = new BufferedImage(newW, newH, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = scaled.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g.drawImage(src, 0, 0, newW, newH, null);
+        g.dispose();
+
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            // PNG보다 용량이 작은 JPG로 설정
+            ImageIO.write(scaled, "jpg", baos);
+            return baos.toByteArray();
+        }
+    }
+
     private ResponseEntity<Map<String, Object>> saveScreenshotImage(BufferedImage image, Users user, Long newHash,
             Map<String, Object> response) throws IOException {
         // String s3Url = s3UploadAndReturnURL(image, user.getUserId());
-        byte[] byteData = imageToBytes(image);
+        byte[] originalBytes = imageToBytes(image); // 원본 바이트
+        byte[] thumbBytes = toThumbnailBytes(image); // 썸네일 바이트
 
         ScreenshotImage newScreenshot = ScreenshotImage.builder()
                 .user(user)
@@ -169,13 +204,26 @@ public class AdaptiveSamplingService {
                 .build();
 
         screenshotImageRepository.save(newScreenshot);
+        log.info("[DB 저장 완료] imageId={}, userId={}, hash={}",
+                newScreenshot.getId(), user.getId(), newScreenshot.getImageHash());
 
-        // Redis에 저장(캐시 추가)
+        // Redis에 저장(캐시 추가) -> 최근 리스트 + 썸네일(TTL) 저장
         screenshotImageCacheService.cacheRecentImageHash(
                 user.getId(),
                 newScreenshot.getId(),
                 newScreenshot.getImageHash(),
-                byteData);
+                thumbBytes);
+
+        log.info("[Redis 저장 완료 - 썸네일] userId={}, imageId={}, hash={}, size={} bytes",
+                user.getId(), newScreenshot.getId(), newScreenshot.getImageHash(), thumbBytes.length);
+
+        // 원본(TTL) 저장 – FastAPI 워커가 여기서 읽어감
+        screenshotImageCacheService.cacheOriginalImage(
+                user.getId(),
+                newScreenshot.getId(),
+                originalBytes);
+        log.info("[Redis 저장 완료 - 원본] userId={}, imageId={}, size={} bytes",
+                user.getId(), newScreenshot.getId(), originalBytes.length);
 
         response.put("currentImageId", newScreenshot.getId());
 

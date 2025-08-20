@@ -16,10 +16,10 @@ public class ScreenshotImage {
     private Long id;
 
     @ManyToOne
-    @JoinColumn(name = "user_id")  // FK 컬럼명 → users.id(Long) 참조
+    @JoinColumn(name = "user_id") // FK 컬럼명 → users.id(Long) 참조
     private Users user;
 
-    private long imageHash;
+    private Long imageHash;
 
     private int visitCnt;
 
@@ -31,14 +31,15 @@ public class ScreenshotImage {
     private String analysisResult; // 결과 요약 or Json 저장
 
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private AnalysisStatus analysisStatus;
 
-    public void updateLastVisited(LocalDateTime lastVisitedAt){
+    public void updateLastVisited(LocalDateTime lastVisitedAt) {
         this.lastVisitedAt = lastVisitedAt;
         this.visitCnt++;
     }
 
-    public ScreenshotImage updateResult(String analysisResult, AnalysisStatus analysisStatus){
+    public ScreenshotImage updateResult(String analysisResult, AnalysisStatus analysisStatus) {
         this.analysisResult = analysisResult;
         this.analysisStatus = analysisStatus;
 
@@ -46,7 +47,8 @@ public class ScreenshotImage {
     }
 
     @Builder
-    public ScreenshotImage(Users user, Long imageHash, int visitCnt, LocalDateTime capturedAt, LocalDateTime lastVisitedAt, AnalysisStatus analysisStatus){
+    public ScreenshotImage(Users user, Long imageHash, int visitCnt, LocalDateTime capturedAt,
+            LocalDateTime lastVisitedAt, AnalysisStatus analysisStatus) {
         this.user = user;
         this.imageHash = imageHash;
         this.visitCnt = visitCnt;
