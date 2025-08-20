@@ -1,22 +1,21 @@
 package com.example.mindtrack.Config;
 
-import com.example.mindtrack.Config.JWT.JwtAuthFilter;<<<<<<<HEAD
-import com.example.mindtrack.Config.JWT.JwtUtil;=======
-import com.example.mindtrack.Service.CustomUserDetailsService;
-
->>>>>>>2533295(redis TTL 설정 및 docker db 연결)
+import com.example.mindtrack.Config.JWT.JwtAuthFilter;
+import com.example.mindtrack.Config.JWT.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;<<<<<<<HEAD
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.http.SessionCreationPolicy;=======
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;>>>>>>>2533295(redis TTL 설정 및 docker db 연결)
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+import com.example.mindtrack.Service.CustomUserDetailsService;
+
+
+
+
 
 @Configuration
 @EnableWebSecurity
