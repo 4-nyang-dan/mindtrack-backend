@@ -20,15 +20,6 @@ public class RedisConfig {
         return template;
     }
 
-<<<<<<< HEAD
-    @Bean()
-    public RedisTemplate<String, byte[]> redisBytesTemplate(RedisConnectionFactory cf) {
-        RedisTemplate<String, byte[]> template = new RedisTemplate<>();
-        template.setConnectionFactory(cf);
-        template.setKeySerializer(new StringRedisSerializer());     // 키는 문자열
-        // 값은 byte[] 이므로 따로 serializer 지정 안 해도 OK (기본이 byte[])
-        return template;
-=======
     // ScreenshotImageCacheService 생성자 에러 -> byte[] 전용 빈 추가
     @Bean(name = "redisBytesTemplate")
     public RedisTemplate<String, byte[]> redisBytesTemplate(RedisConnectionFactory cf) {
@@ -40,6 +31,5 @@ public class RedisConfig {
         t.setHashValueSerializer(RedisSerializer.byteArray());
         t.afterPropertiesSet();
         return t;
->>>>>>> 2533295 (redis TTL 설정 및 docker db 연결)
     }
 }
