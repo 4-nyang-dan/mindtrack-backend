@@ -18,4 +18,13 @@ public class RedisConfig {
         template.setValueSerializer(new StringRedisSerializer()); // 값도 문자열
         return template;
     }
+
+    @Bean()
+    public RedisTemplate<String, byte[]> redisBytesTemplate(RedisConnectionFactory cf) {
+        RedisTemplate<String, byte[]> template = new RedisTemplate<>();
+        template.setConnectionFactory(cf);
+        template.setKeySerializer(new StringRedisSerializer());     // 키는 문자열
+        // 값은 byte[] 이므로 따로 serializer 지정 안 해도 OK (기본이 byte[])
+        return template;
+    }
 }
