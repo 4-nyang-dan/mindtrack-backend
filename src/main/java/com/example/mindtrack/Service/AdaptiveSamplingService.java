@@ -57,7 +57,6 @@ public class AdaptiveSamplingService {
 
         // 이미지의 해시를 계산한다.
         long newHash = similarityCheckService.computeHash(image);
-        log.info(">> 최근 들어온 이미지 hash 값 = {}", newHash);
 
         try {
             // 1차 샘플링 구간 제거
@@ -95,7 +94,6 @@ public class AdaptiveSamplingService {
                     try (ByteArrayInputStream bais = new ByteArrayInputStream(thumbBytes)) {
                         BufferedImage prevThumb = ImageIO.read(bais);
                         double reSimilarity = similarityCheckService.computeSimilarity(image, prevThumb);
-                        log.info("[최종 선택된 유사 이미지와의 SSIM 유사도] : {}", reSimilarity);
 
                         // 그 유사도가 높다면, 거의 일치하는 이미지라고 판단
                         // 방문도를 높이고, 최근 방문 시간도 업데이트한다.
@@ -204,8 +202,6 @@ public class AdaptiveSamplingService {
                 .build();
 
         screenshotImageRepository.save(newScreenshot);
-        log.info("[DB 저장 완료] imageId={}, userId={}, hash={}",
-                newScreenshot.getId(), user.getId(), newScreenshot.getImageHash());
 
         // Redis에 저장(캐시 추가) -> 최근 리스트 + 썸네일(TTL) 저장
         screenshotImageCacheService.cacheRecentImageHash(
@@ -214,16 +210,12 @@ public class AdaptiveSamplingService {
                 newScreenshot.getImageHash(),
                 thumbBytes);
 
-        log.info("[Redis 저장 완료 - 썸네일] userId={}, imageId={}, hash={}, size={} bytes",
-                user.getId(), newScreenshot.getId(), newScreenshot.getImageHash(), thumbBytes.length);
 
         // 원본(TTL) 저장 – FastAPI 워커가 여기서 읽어감
         screenshotImageCacheService.cacheOriginalImage(
                 user.getId(),
                 newScreenshot.getId(),
                 originalBytes);
-        log.info("[Redis 저장 완료 - 원본] userId={}, imageId={}, size={} bytes",
-                user.getId(), newScreenshot.getId(), originalBytes.length);
 
         response.put("currentImageId", newScreenshot.getId());
 
