@@ -137,8 +137,6 @@ public class ScreenshotImageCacheService {
         double maxSimilarity = 0;
         int bestDist = Integer.MAX_VALUE;
 
-        log.info("---------------------------------------------------------");
-
         for (String entry : cached) {
             String[] parts = entry.split(":");
             if (parts.length != 2)
@@ -149,8 +147,6 @@ public class ScreenshotImageCacheService {
 
             int dist = similarityCheckService.hammingDistance(newHash, cachedHash);
             double similarity = similarityCheckService.similarity(newHash, cachedHash);
-            log.info("[해밍 거리, 유사도 비교] newHash={} vs cachedHash={} → dist={}, similarity={}, imageId={}",
-                    newHash, cachedHash, dist, similarity, imageId);
 
             if (dist <= maxDistance && similarity >= threshold) {
                 if (similarity > maxSimilarity) {
@@ -161,12 +157,14 @@ public class ScreenshotImageCacheService {
             }
         }
         // 루프 밖으로 이동 - 이 전 코드는 루프안에서 출력해서 불필요하게 출력함.
-        if (best != null) {
-            log.info("[최종 선택된 유사 이미지] imageId={}, 해밍 거리={}, 유사도={}", best.imageId, bestDist, maxSimilarity);
-        } else {
-            log.info("[유사 이미지 없음] 기준 거리 maxDistance={} 이하 항목 없음", maxDistance);
-        }
-
+        /*
+         * if (best != null) {
+         * log.info("[최종 선택된 유사 이미지] imageId={}, 해밍 거리={}, 유사도={}", best.imageId,
+         * bestDist, maxSimilarity);
+         * } else {
+         * log.info("[유사 이미지 없음] 기준 거리 maxDistance={} 이하 항목 없음", maxDistance);
+         * }
+         */
         return Optional.ofNullable(best);
     }
 

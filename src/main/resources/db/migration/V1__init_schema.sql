@@ -9,6 +9,14 @@
 -- 0) 확장: UUID 생성용
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'postgres') THEN
+    CREATE ROLE postgres LOGIN PASSWORD 'dummy';
+  END IF;
+END
+$$;
+
 -- 1) 상위 테이블: suggestions
 CREATE TABLE IF NOT EXISTS suggestions (
     id          BIGSERIAL PRIMARY KEY,

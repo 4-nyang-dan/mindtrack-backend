@@ -1,6 +1,7 @@
 package com.example.mindtrack.Service;
 
 import com.example.mindtrack.Util.CustomException;
+import com.example.mindtrack.Controller.AuthController;
 import com.example.mindtrack.Domain.ScreenshotImage;
 import com.example.mindtrack.Domain.Users;
 import com.example.mindtrack.Enum.AnalysisStatus;
@@ -57,7 +58,6 @@ public class AdaptiveSamplingService {
 
         // 이미지의 해시를 계산한다.
         long newHash = similarityCheckService.computeHash(image);
-        log.info(">> 최근 들어온 이미지 hash 값 = {}", newHash);
 
         try {
             // 1차 샘플링 구간 제거
@@ -95,32 +95,41 @@ public class AdaptiveSamplingService {
                     try (ByteArrayInputStream bais = new ByteArrayInputStream(thumbBytes)) {
                         BufferedImage prevThumb = ImageIO.read(bais);
                         double reSimilarity = similarityCheckService.computeSimilarity(image, prevThumb);
-                        log.info("[최종 선택된 유사 이미지와의 SSIM 유사도] : {}", reSimilarity);
 
                         // 그 유사도가 높다면, 거의 일치하는 이미지라고 판단
                         // 방문도를 높이고, 최근 방문 시간도 업데이트한다.
+
+                        /*
+                         * 재분석 트리거 분기 (수정사항):
+                         * 재유사도가 기준 이상이면 "같은 장면"으로 간주하고, 기존 이미지를 재사용한다.
+                         * 이때 반드시 "워커가 집어가기 전에 (= PENDING 선점 전에 ) Redis 에 원본을 먼저 덮어 쓰워야"
+                         * 워커가 [원본 이미지 없음] 과 같은 문제가 생기지 않고 안전하게 PENDING 이미지를 집어갈 수 있음
+                         * 
+                         */
                         if (reSimilarity >= SIMILARITY_THRESHOLD) {
                             ScreenshotImage prevScreenshotImage = ScreenshotImageOpt.get();
 
-                            // 최근 방문 시간 및 방문도를 높인다.
+                            // 1) 최근 방문 시간 및 방문도를 높인다.
                             prevScreenshotImage.updateLastVisited(LocalDateTime.now());
 
-                            // 재분석시 DB 의 AnalysisStatus 를 PENDING 상태로 리셋 (그래야 워커가 다시 집어감)
-                            prevScreenshotImage.updateResult(null, AnalysisStatus.PENDING);
-                            screenshotImageRepository.save(prevScreenshotImage);
-
-                            // Redis에 저장(캐시 추가)
-                            // 방금 들어온 "원본"을 기존 이미지ID 키로 Redis에 덮어쓰기
+                            // 2) Redis 에 "원본"을 먼저 덮어 쓴다. (워커가 즉시 선점하더라도 원본 준비 상태 확보)
                             byte[] originalBytesForReanalysis = imageToBytes(image); // 이미 있는 유틸 재사용
                             screenshotImageCacheService.cacheOriginalImage(
                                     user.getId(),
                                     prevScreenshotImage.getId(),
                                     // prevScreenshotImage.getImageHash()
                                     originalBytesForReanalysis);
-                            log.info("[재분석 예약] userId={}, prevImageId={}, status=PENDING 로 전환 + Redis 원본 덮어쓰기 완료",
+
+                            log.info("[재분석 준비완료] Redis 원본 저장 userId={} imageId={} bytes={}",
+                                    user.getId(), prevScreenshotImage.getId(), originalBytesForReanalysis.length);
+
+                            // (3) 이제 DB 상태를 PENDING으로 전환 → 워커가 집어감
+                            prevScreenshotImage.updateResult(null, AnalysisStatus.PENDING);
+                            screenshotImageRepository.save(prevScreenshotImage);
+                            log.info("[재분석 예약] DB 상태 PENDING 전환 userId={} imageId={}",
                                     user.getId(), prevScreenshotImage.getId());
 
-                            // AI 재분석 요청
+                            // 4) 응답 : AI 재분석 요청
                             return ResponseEntity.ok(Map.of(
                                     "success", true,
                                     "similarity", reSimilarity,
@@ -204,8 +213,6 @@ public class AdaptiveSamplingService {
                 .build();
 
         screenshotImageRepository.save(newScreenshot);
-        log.info("[DB 저장 완료] imageId={}, userId={}, hash={}",
-                newScreenshot.getId(), user.getId(), newScreenshot.getImageHash());
 
         // Redis에 저장(캐시 추가) -> 최근 리스트 + 썸네일(TTL) 저장
         screenshotImageCacheService.cacheRecentImageHash(
@@ -214,16 +221,11 @@ public class AdaptiveSamplingService {
                 newScreenshot.getImageHash(),
                 thumbBytes);
 
-        log.info("[Redis 저장 완료 - 썸네일] userId={}, imageId={}, hash={}, size={} bytes",
-                user.getId(), newScreenshot.getId(), newScreenshot.getImageHash(), thumbBytes.length);
-
         // 원본(TTL) 저장 – FastAPI 워커가 여기서 읽어감
         screenshotImageCacheService.cacheOriginalImage(
                 user.getId(),
                 newScreenshot.getId(),
                 originalBytes);
-        log.info("[Redis 저장 완료 - 원본] userId={}, imageId={}, size={} bytes",
-                user.getId(), newScreenshot.getId(), originalBytes.length);
 
         response.put("currentImageId", newScreenshot.getId());
 
