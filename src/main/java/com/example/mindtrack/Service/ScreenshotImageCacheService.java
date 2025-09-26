@@ -106,6 +106,13 @@ public class ScreenshotImageCacheService {
         redisBytesTemplate.delete(keyThumb(userId, hash));
     }
 
+    // 유사도 측정 시 특정 이미지가 현재 워커에서 처리 중인지"를 Redis에서 확인
+    public boolean isProcessing(Long userId, Long imageId) {
+        String key = "screenshot:status:" + userId + ":" + imageId;
+        String status = redisTemplate.opsForValue().get(key);
+        return "PROCESSING".equals(status);
+    }
+
     private void cacheRecentImageHashInternal(
             Long userId, Long imageId, long hash, Optional<byte[]> thumbOpt) {
         final String listKey = keyRecentList(userId);
