@@ -17,7 +17,6 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -30,7 +29,6 @@ import java.awt.RenderingHints;
 @RequiredArgsConstructor
 public class AdaptiveSamplingService {
 
-    private final ScreenshotImageRepository screenshotImageRepository;
     private final UserRepository userRepository;
     private final SimilarityCheckService similarityCheckService;
     private final ScreenshotImageCacheService screenshotImageCacheService;
@@ -84,27 +82,39 @@ public class AdaptiveSamplingService {
                     byte[] thumbBytes = thumbBytesOpt.get();
                     try (ByteArrayInputStream bais = new ByteArrayInputStream(thumbBytes)) {
 
+                        // 이전 썸네일
                         BufferedImage prevThumb = ImageIO.read(bais);
                         double reSimilarity = similarityCheckService.computeSimilarity(image, prevThumb);
 
                         // 그 유사도가 높다면, 거의 일치하는 이미지라고 판단
                         // 방문도를 높이고, 최근 방문 시간도 업데이트한다. <---- 방문도 관련 코드 제거
                         if (reSimilarity >= SIMILARITY_THRESHOLD) {
-                            // Redis에 저장(캐시 추가)
-                            // 방금 들어온 "원본"을 기존 이미지ID 키로 Redis에 덮어쓰기
-                            byte[] originalBytesForReanalysis = imageToBytes(image); // 이미 있는 유틸 재사용
-                            screenshotImageCacheService.cacheOriginalImage(user.getId(),
-                                    mostSimilarFromCache.get().imageId(), originalBytesForReanalysis);
+                            Long prevImageId = mostSimilarFromCache.get().imageId();
+                            boolean isProcessing = screenshotImageCacheService.isProcessing(user.getId(), prevImageId);
 
-                            log.info("[재분석 예약] userId={}, prevImageId={}, status=PENDING 로 전환 + Redis 원본 덮어쓰기 완료",
-                                    user.getId(), mostSimilarFromCache.get().imageId());
+                            if (isProcessing) {
+                                // 처리 중이라면 → 새 이미지로 저장
+                                response.put("parentImageId", prevImageId);
+                                return saveScreenshotImage(image, user, newHash, response);
+                            }
 
-                            // AI 재분석 요청 결과 반환
-                            return ResponseEntity.ok(Map.of(
-                                    "success", true,
-                                    "similarity", reSimilarity,
-                                    "prevImageId", mostSimilarFromCache.get().imageId(),
-                                    "message", "저장된 적 있음! AI 재분석 요청"));
+                            else { // pending 상태라면 Redis에 덮어쓰기
+                                   // Redis에 저장(캐시 추가)
+                                   // 방금 들어온 "원본"을 기존 이미지ID 키로 Redis에 덮어쓰기
+                                byte[] originalBytesForReanalysis = imageToBytes(image);
+                                screenshotImageCacheService.cacheOriginalImage(user.getId(),
+                                        mostSimilarFromCache.get().imageId(), originalBytesForReanalysis);
+
+                                log.info("[재분석 예약] userId={}, prevImageId={}, status=PENDING 로 전환 + Redis 원본 덮어쓰기 완료",
+                                        user.getId(), mostSimilarFromCache.get().imageId());
+
+                                // AI 재분석 요청 결과 반환
+                                return ResponseEntity.ok(Map.of(
+                                        "success", true,
+                                        "similarity", reSimilarity,
+                                        "prevImageId", mostSimilarFromCache.get().imageId(),
+                                        "message", "저장된 적 있음! AI 재분석 요청"));
+                            }
                         } else {
                             response.put("prevImageId", mostSimilarFromCache.get().imageId());
                             response.put("message",
