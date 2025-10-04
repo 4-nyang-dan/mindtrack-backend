@@ -133,7 +133,7 @@ public class ScreenshotImageCacheService {
         // 2) 맨 앞에 추가
         redisTemplate.opsForList().leftPush(listKey, newEntry);
 
-        // ★ 최근 리스트 자체에도 TTL 적용
+        // 최근 리스트 자체에도 TTL 적용
         redisTemplate.expire(listKey, TTL_RECENT);
 
         // 2-1) 썸네일 바이트도 함께 저장 (만료 없음-> TTL 적용으로 수정)
@@ -202,7 +202,7 @@ public class ScreenshotImageCacheService {
     }
 
     // ------------------------
-    // FastAPI 이동 & 동시성 보호
+    // FastAPI으로 원자적 이동 & 동시성 보호
     // ------------------------
     public Optional<Long> movePendingToProcessing(Long userId) {
         String pendingKey = keyPendingQueue(userId);
@@ -221,7 +221,7 @@ public class ScreenshotImageCacheService {
     }
 
     // ------------------------
-    // 로그아웃/정지 시 pending만 삭제
+    // 로그아웃/정지 시 pending만 삭제 - 사용자가 로그아웃하거나 계정을 정지시킬 때 대기열만 정리
     // ------------------------
     public void clearPendingImages(Long userId) {
         String pendingKey = keyPendingQueue(userId);
@@ -235,6 +235,36 @@ public class ScreenshotImageCacheService {
         }
 
         redisTemplate.delete(pendingKey);
+    }
+
+    // 새 imageId를 대기열에 넣음(LPUSH) -> 워커가 나중에 RPOP 으로 꺼내감(FIFO 유지)
+    public void enqueueImage(Long userId, Long imageId) {
+        String pendingKey = keyPendingQueue(userId);
+        String statusKey = "screenshot:status:" + userId + ":" + imageId;
+
+        // 워커는 RPOP 으로 가장 먼저들어온(가장 왼쪽에 배치한 - left) 을 먼저 꺼내감
+        redisTemplate.opsForList().leftPush(pendingKey, String.valueOf(imageId));
+
+        redisTemplate.opsForValue().set(statusKey, "QUEUED");
+        redisTemplate.expire(statusKey, TTL_ORIG);
+    }
+
+    // ensure imageId exists in pending; if not, push it
+    public void ensurePending(Long userId, Long imageId) {
+        String pendingKey = keyPendingQueue(userId);
+        List<String> pending = redisTemplate.opsForList().range(pendingKey, 0, -1);
+        String idStr = String.valueOf(imageId);
+        boolean contains = (pending != null && pending.contains(idStr));
+        if (!contains) {
+            redisTemplate.opsForList().leftPush(pendingKey, idStr);
+            // set status if absent
+            String statusKey = "screenshot:status:" + userId + ":" + imageId;
+            String existing = redisTemplate.opsForValue().get(statusKey);
+            if (existing == null) {
+                redisTemplate.opsForValue().set(statusKey, "QUEUED");
+                redisTemplate.expire(statusKey, TTL_ORIG);
+            }
+        }
     }
 
     public record Candidate(Long imageId, long hash) {
