@@ -27,17 +27,38 @@ public class SuggestionsController {
     private final JwtUtil jwtUtil;
 
     @GetMapping("/latest")
-    public ResponseEntity<SuggestionPayload> latest(Authentication authentication) {
-        String userId = (String) authentication.getPrincipal(); // principal은 userId 문자열
-        log.info("suggestion latest 로그: Authentication 유저아이디 ={}", userId);
+    public ResponseEntity<?> latest(Authentication authentication) {
+        String userId = (String) authentication.getPrincipal();
+        log.info("suggestion latest 요청 userId={}", userId);
 
         Users user = userRepository.findByUserId(userId).orElseThrow();
         String userIdStr = String.valueOf(user.getId());
 
-        log.info("suggestion latest 로그: Authentication 유저 bigint -> text 아이디 ={}", userIdStr);
+        // 1️⃣ 먼저 SuggestionRepository 에서 최신 payload 확인
+        var suggestionOpt = suggestionRepository.findLatestSuggestionPayloadByUser(userIdStr);
+        if (suggestionOpt.isPresent()) {
+            log.info("suggestion 테이블 기반 데이터 반환");
+            return ResponseEntity.ok(suggestionOpt.get());
+        }
 
-        return ResponseEntity.of(suggestionRepository.findLatestSuggestionPayloadByUser(userIdStr));
+        // 2️⃣ 없으면 ScreenshotImage 의 analysisResult 기반으로 대체
+        var screenshotOpt = screenshotImageRepository.findTopByUser_IdOrderByCapturedAtDesc(user.getId());
+        if (screenshotOpt.isPresent() && screenshotOpt.get().getAnalysisResult() != null) {
+            try {
+                ObjectMapper om = new ObjectMapper();
+                Map<String, Object> resultMap = om.readValue(screenshotOpt.get().getAnalysisResult(), Map.class);
+                log.info("analysis_result 기반 데이터 반환");
+                return ResponseEntity.ok(resultMap);
+            } catch (Exception e) {
+                log.error("analysis_result JSON 파싱 오류", e);
+                return ResponseEntity.internalServerError()
+                        .body(Map.of("error", "invalid analysis_result JSON"));
+            }
+        }
+
+        return ResponseEntity.noContent().build();
     }
+
 
     @GetMapping(value="/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(
