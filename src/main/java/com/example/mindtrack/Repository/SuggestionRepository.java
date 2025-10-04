@@ -7,6 +7,8 @@ import java.util.Optional;
 
 public interface SuggestionRepository {
     List<Optional<String>> findSuggestionsJsonByPayloadId(Long payloadId);
+
     Optional<SuggestionPayload> findLatestSuggestionPayloadByUser(String userId);
+
     Optional<SuggestionPayload> findSuggestionPayloadById(Long id);
 }

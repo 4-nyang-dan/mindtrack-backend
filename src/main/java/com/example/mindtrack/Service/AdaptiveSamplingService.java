@@ -189,6 +189,8 @@ public class AdaptiveSamplingService {
 
         screenshotImageCacheService.cacheRecentImageHash(user.getId(), newImageId, newHash, thumbBytes);
         screenshotImageCacheService.cacheOriginalImage(user.getId(), newImageId, originalBytes);
+        // 원본 저장 직후 반드시 pending 큐에 enqueue
+        screenshotImageCacheService.enqueueImage(user.getId(), newImageId);
 
         response.put("currentImageId", newImageId);
         response.put("message", "새 이미지 Redis 저장 완료");
