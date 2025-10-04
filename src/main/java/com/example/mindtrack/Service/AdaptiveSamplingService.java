@@ -17,7 +17,6 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -25,15 +24,11 @@ import java.util.Optional;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 
-// ===========  AI 요청 재분석시 패딩 작업 추가  ============
-// prevImageId로 Redis 원본을 덮어써야 워커가 DB에서 
-// 그 행을 PENDING으로 집었을 때, 정확한 원본을 읽어 분석할 수 있음
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class AdaptiveSamplingService {
 
-    private final ScreenshotImageRepository screenshotImageRepository;
     private final UserRepository userRepository;
     private final SimilarityCheckService similarityCheckService;
     private final ScreenshotImageCacheService screenshotImageCacheService;
@@ -55,28 +50,22 @@ public class AdaptiveSamplingService {
         Users user = userRepository.findByUserId(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
+        // 1) Redis 후보 이미지 찾기 (2차 샘플링)
         // 이미지의 해시를 계산한다.
         long newHash = similarityCheckService.computeHash(image);
 
         try {
-            // 1차 샘플링 구간 제거
-            // 2차 샘플링 구간 부터
-            //
-            // 직전 저장 이미지와의 유사도가 낮을 때
-
             // 지금 들어온 이미지의 dHash 해시값과 레디스 캐시 값의 해밍거리를 계산하여 유사한 해시값을 가져옴
             Optional<ScreenshotImageCacheService.Candidate> mostSimilarFromCache = screenshotImageCacheService
                     .findMostSimilarFromCache(user.getId(), newHash, 6);
 
+            // 2) 후보 이미지가 존재한다면 → 썸네일 가져와서 SSIM 유사도 재검증
             if (mostSimilarFromCache.isPresent()) {
-                // 있다면, 그 해시값으로 해당 이미지 ScreenshotImage 가져오기
-                Optional<ScreenshotImage> ScreenshotImageOpt = screenshotImageRepository
-                        .findTopByUser_IdAndId(user.getId(), mostSimilarFromCache.get().imageId());
-                // 그리고 레디스 캐시에서 해당 해시 키를 가진 값(축소판 이미지)을 가져옴
+                // DB 가 아닌 Redis 에서 썸네일 가져오기
                 Optional<byte[]> thumbBytesOpt = screenshotImageCacheService.getImageThumbByHash(user.getId(),
                         mostSimilarFromCache.get().hash());
 
-                if (ScreenshotImageOpt.isPresent() && thumbBytesOpt.isPresent()) {
+                if (thumbBytesOpt.isPresent()) {
                     // 3차 샘플링 구간
                     //
                     // 하지만, 해시 값이 같지만(dHash 계산으론 유사한 이미지이지만), 실제로 유사하지 않은 구조일 확률도 있으므로(타이핑이 더 됐다는
@@ -92,40 +81,42 @@ public class AdaptiveSamplingService {
                     // 레디스 캐시에서 가져온 byte를 다시 이미지로 변환
                     byte[] thumbBytes = thumbBytesOpt.get();
                     try (ByteArrayInputStream bais = new ByteArrayInputStream(thumbBytes)) {
+
+                        // 이전 썸네일
                         BufferedImage prevThumb = ImageIO.read(bais);
                         double reSimilarity = similarityCheckService.computeSimilarity(image, prevThumb);
 
                         // 그 유사도가 높다면, 거의 일치하는 이미지라고 판단
-                        // 방문도를 높이고, 최근 방문 시간도 업데이트한다.
+                        // 방문도를 높이고, 최근 방문 시간도 업데이트한다. <---- 방문도 관련 코드 제거
                         if (reSimilarity >= SIMILARITY_THRESHOLD) {
-                            ScreenshotImage prevScreenshotImage = ScreenshotImageOpt.get();
+                            Long prevImageId = mostSimilarFromCache.get().imageId();
+                            boolean isProcessing = screenshotImageCacheService.isProcessing(user.getId(), prevImageId);
 
-                            // 최근 방문 시간 및 방문도를 높인다.
-                            prevScreenshotImage.updateLastVisited(LocalDateTime.now());
+                            if (isProcessing) {
+                                // 처리 중이라면 → 새 이미지로 저장
+                                response.put("parentImageId", prevImageId);
+                                return saveScreenshotImage(image, user, newHash, response);
+                            }
 
-                            // 재분석시 DB 의 AnalysisStatus 를 PENDING 상태로 리셋 (그래야 워커가 다시 집어감)
-                            prevScreenshotImage.updateResult(null, AnalysisStatus.PENDING);
-                            screenshotImageRepository.save(prevScreenshotImage);
+                            else { // pending 상태라면 Redis에 덮어쓰기
+                                   // Redis에 저장(캐시 추가)
+                                   // 방금 들어온 "원본"을 기존 이미지ID 키로 Redis에 덮어쓰기
+                                byte[] originalBytesForReanalysis = imageToBytes(image);
+                                screenshotImageCacheService.cacheOriginalImage(user.getId(),
+                                        mostSimilarFromCache.get().imageId(), originalBytesForReanalysis);
 
-                            // Redis에 저장(캐시 추가)
-                            // 방금 들어온 "원본"을 기존 이미지ID 키로 Redis에 덮어쓰기
-                            byte[] originalBytesForReanalysis = imageToBytes(image); // 이미 있는 유틸 재사용
-                            screenshotImageCacheService.cacheOriginalImage(
-                                    user.getId(),
-                                    prevScreenshotImage.getId(),
-                                    // prevScreenshotImage.getImageHash()
-                                    originalBytesForReanalysis);
-                            log.info("[재분석 예약] userId={}, prevImageId={}, status=PENDING 로 전환 + Redis 원본 덮어쓰기 완료",
-                                    user.getId(), prevScreenshotImage.getId());
+                                log.info("[재분석 예약] userId={}, prevImageId={}, status=PENDING 로 전환 + Redis 원본 덮어쓰기 완료",
+                                        user.getId(), mostSimilarFromCache.get().imageId());
 
-                            // AI 재분석 요청
-                            return ResponseEntity.ok(Map.of(
-                                    "success", true,
-                                    "similarity", reSimilarity,
-                                    "prevImageId", ScreenshotImageOpt.get().getId(),
-                                    "message", "저장된 적 있음! AI 재분석 요청: visitCnt=" + prevScreenshotImage.getVisitCnt()));
+                                // AI 재분석 요청 결과 반환
+                                return ResponseEntity.ok(Map.of(
+                                        "success", true,
+                                        "similarity", reSimilarity,
+                                        "prevImageId", mostSimilarFromCache.get().imageId(),
+                                        "message", "저장된 적 있음! AI 재분석 요청"));
+                            }
                         } else {
-                            response.put("prevImageId", ScreenshotImageOpt.get().getId());
+                            response.put("prevImageId", mostSimilarFromCache.get().imageId());
                             response.put("message",
                                     "이전에 저장된 비슷한 이미지가 있지만(새 이미지 newHash와 유사도 9.7 이상 혹은 해밍거리 6이하가 있음), 실제로 구조가 다름(유사도SSIM가 낮음)");
                         }
@@ -135,12 +126,12 @@ public class AdaptiveSamplingService {
                     response.put("message", "이전에 저장된 역사가 없음, 새 이미지 newHash와 같은 값이 아예 없음");
                 }
             }
+            // 신규 이미지 처리
             return saveScreenshotImage(image, user, newHash, response);
 
         } catch (Exception e) {
             throw new CustomException("에러 발생: " + e.getMessage(), HttpStatus.BAD_REQUEST);
         }
-
     }
 
     // AWS S3 SDK 사용, 현재는 로컬 저장으로 구현되어있음
@@ -192,34 +183,18 @@ public class AdaptiveSamplingService {
         byte[] originalBytes = imageToBytes(image); // 원본 바이트
         byte[] thumbBytes = toThumbnailBytes(image); // 썸네일 바이트
 
-        ScreenshotImage newScreenshot = ScreenshotImage.builder()
-                .user(user)
-                .imageHash(newHash)
-                .visitCnt(1)
-                .capturedAt(LocalDateTime.now())
-                .lastVisitedAt(LocalDateTime.now())
-                .analysisStatus(AnalysisStatus.PENDING)
-                .build();
-
-        screenshotImageRepository.save(newScreenshot);
-
+        // === 신규 이미지 Redis 저장====
         // Redis에 저장(캐시 추가) -> 최근 리스트 + 썸네일(TTL) 저장
-        screenshotImageCacheService.cacheRecentImageHash(
-                user.getId(),
-                newScreenshot.getId(),
-                newScreenshot.getImageHash(),
-                thumbBytes);
+        Long newImageId = screenshotImageCacheService.generateNewImageId(user.getId());
 
+        screenshotImageCacheService.cacheRecentImageHash(user.getId(), newImageId, newHash, thumbBytes);
+        screenshotImageCacheService.cacheOriginalImage(user.getId(), newImageId, originalBytes);
+        // 원본 저장 직후 반드시 pending 큐에 enqueue
+        screenshotImageCacheService.enqueueImage(user.getId(), newImageId);
 
-        // 원본(TTL) 저장 – FastAPI 워커가 여기서 읽어감
-        screenshotImageCacheService.cacheOriginalImage(
-                user.getId(),
-                newScreenshot.getId(),
-                originalBytes);
+        response.put("currentImageId", newImageId);
+        response.put("message", "새 이미지 Redis 저장 완료");
 
-        response.put("currentImageId", newScreenshot.getId());
-
-        // AI 분석 요청(일단 로그만)
         return new ResponseEntity<>(response, HttpStatus.OK);
     }
 }

@@ -9,6 +9,12 @@ import java.util.List;
 import java.util.Optional;
 import java.time.Duration;
 
+/*
+* Redis 큐를 사용한 원자적 이동(atomic move)
+* FastAPI 가 분석을 시작할때, Redis 에서 임시 큐로 이동
+* Spring 이 삭제할때는 pendingImages 만 삭제, processingImages 는 삭제하지 않음
+*/
+
 @Service
 @Slf4j
 @RequiredArgsConstructor
@@ -26,7 +32,7 @@ public class ScreenshotImageCacheService {
     private static final Duration TTL_RECENT = Duration.ofHours(12);
     private static final int MAX_RECENT = 50;
 
-    private static final double threshold = 0.97;
+    private static final double threshold = 0.7;
 
     private String keyThumb(Long userId, long hash) {
         return "user:" + userId + ":thumb:" + hash;
@@ -40,14 +46,19 @@ public class ScreenshotImageCacheService {
         return "user:" + userId + ":img:" + imageId;
     } // 원본 키
 
-    // 썸네일까지 함께 저장하는 오버로드
-    public void cacheRecentImageHash(Long userId, Long imageId, long hash, byte[] pngThumbBytes) {
-        cacheRecentImageHashInternal(userId, imageId, hash, Optional.ofNullable(pngThumbBytes));
+    private String keyPendingQueue(Long userId) {
+        return "pending:" + userId;
     }
 
-    // 기존 시그니처도 유지
-    public void cacheRecentImageHash(Long userId, Long imageId, long hash) {
-        cacheRecentImageHashInternal(userId, imageId, hash, Optional.empty());
+    private String keyProcessingQueue(Long userId) {
+        return "processing:" + userId;
+    }
+
+    // Redis에 원자적으로 증가시키는 시퀀스로 새 이미지 ID 생성
+    public Long generateNewImageId(Long userId) {
+        String seqKey = "user:" + userId + ":imageSeq";
+        // Redis INCR 사용 → 없으면 1부터 시작
+        return redisTemplate.opsForValue().increment(seqKey);
     }
 
     // 원본 이미지 바이트 Redis에 TTL로 보관/조회/삭제
@@ -58,12 +69,48 @@ public class ScreenshotImageCacheService {
                 TTL_ORIG);
     }
 
+    // 썸네일까지 함께 저장하는 오버로드
+    public void cacheRecentImageHash(Long userId, Long imageId, long hash, byte[] pngThumbBytes) {
+        cacheRecentImageHashInternal(userId, imageId, hash, Optional.ofNullable(pngThumbBytes));
+    }
+
+    public void cacheThumbnail(Long userId, Long hash, byte[] thumbBytes) {
+        redisBytesTemplate.opsForValue().set(keyThumb(userId, hash), thumbBytes, TTL_THUMB);
+    }
+
     public Optional<byte[]> getOriginalImage(Long userId, Long imageId) {
         return Optional.ofNullable(redisBytesTemplate.opsForValue().get(keyOriginal(userId, imageId)));
     }
 
-    public void deleteOriginalImage(Long userId, Long imageId) {
-        redisBytesTemplate.delete(keyOriginal(userId, imageId));
+    public Optional<byte[]> getImageThumbByHash(Long userId, long hash) {
+        return Optional.ofNullable(redisBytesTemplate.opsForValue().get(keyThumb(userId, hash)));
+    }
+
+    // ------------------------
+    // 최근 이미지 리스트 관리 (중복 제거 + 최대 50개)
+    // ------------------------
+    // 기존 시그니처도 유지
+    public void cacheRecentImageHash(Long userId, Long imageId, long hash) {
+        cacheRecentImageHashInternal(userId, imageId, hash, Optional.empty());
+    }
+
+    // 썸네일 저장 시 TTL 부여 추가
+    public void cacheImageThumbByHash(Long userId, long hash, byte[] pngThumbBytes) {
+        redisBytesTemplate.opsForValue().set(
+                keyThumb(userId, hash),
+                pngThumbBytes,
+                TTL_THUMB);
+    }
+
+    public void deleteImageThumbByHash(Long userId, long hash) {
+        redisBytesTemplate.delete(keyThumb(userId, hash));
+    }
+
+    // 유사도 측정 시 특정 이미지가 현재 워커에서 처리 중인지"를 Redis에서 확인
+    public boolean isProcessing(Long userId, Long imageId) {
+        String key = "screenshot:status:" + userId + ":" + imageId;
+        String status = redisTemplate.opsForValue().get(key);
+        return "PROCESSING".equals(status);
     }
 
     private void cacheRecentImageHashInternal(
@@ -86,7 +133,7 @@ public class ScreenshotImageCacheService {
         // 2) 맨 앞에 추가
         redisTemplate.opsForList().leftPush(listKey, newEntry);
 
-        // ★ 최근 리스트 자체에도 TTL 적용
+        // 최근 리스트 자체에도 TTL 적용
         redisTemplate.expire(listKey, TTL_RECENT);
 
         // 2-1) 썸네일 바이트도 함께 저장 (만료 없음-> TTL 적용으로 수정)
@@ -109,23 +156,9 @@ public class ScreenshotImageCacheService {
         }
     }
 
-    // 썸네일 저장 시 TTL 부여 추가
-    private void cacheImageThumbByHash(Long userId, long hash, byte[] pngThumbBytes) {
-        redisBytesTemplate.opsForValue().set(
-                keyThumb(userId, hash),
-                pngThumbBytes,
-                TTL_THUMB);
-    }
-
-    public Optional<byte[]> getImageThumbByHash(Long userId, long hash) {
-        // return Optional.of(redisBytesTemplate.opsForValue().get(keyThumb(userId,
-        // hash)));
-        return Optional.ofNullable(redisBytesTemplate.opsForValue().get(keyThumb(userId, hash)));
-    }
-
-    public void deleteImageThumbByHash(Long userId, long hash) {
-        redisBytesTemplate.delete(keyThumb(userId, hash));
-    }
+    // ------------------------
+    // 유사도 체크
+    // ------------------------
 
     public Optional<Candidate> findMostSimilarFromCache(Long userId, long newHash, int maxDistance) {
         String key = keyRecentList(userId);
@@ -157,13 +190,81 @@ public class ScreenshotImageCacheService {
             }
         }
         // 루프 밖으로 이동 - 이 전 코드는 루프안에서 출력해서 불필요하게 출력함.
-        /*if (best != null) {
-            log.info("[최종 선택된 유사 이미지] imageId={}, 해밍 거리={}, 유사도={}", best.imageId, bestDist, maxSimilarity);
-        } else {
-            log.info("[유사 이미지 없음] 기준 거리 maxDistance={} 이하 항목 없음", maxDistance);
-        }
-*/
+        /*
+         * if (best != null) {
+         * log.info("[최종 선택된 유사 이미지] imageId={}, 해밍 거리={}, 유사도={}", best.imageId,
+         * bestDist, maxSimilarity);
+         * } else {
+         * log.info("[유사 이미지 없음] 기준 거리 maxDistance={} 이하 항목 없음", maxDistance);
+         * }
+         */
         return Optional.ofNullable(best);
+    }
+
+    // ------------------------
+    // FastAPI으로 원자적 이동 & 동시성 보호
+    // ------------------------
+    public Optional<Long> movePendingToProcessing(Long userId) {
+        String pendingKey = keyPendingQueue(userId);
+        String processingKey = keyProcessingQueue(userId);
+
+        String imageIdStr = redisTemplate.opsForList().rightPopAndLeftPush(pendingKey, processingKey);
+        if (imageIdStr == null)
+            return Optional.empty();
+
+        return Optional.of(Long.parseLong(imageIdStr));
+    }
+
+    public void removeProcessingImage(Long userId, Long imageId) {
+        redisTemplate.opsForList().remove(keyProcessingQueue(userId), 0, String.valueOf(imageId));
+        redisBytesTemplate.delete(keyOriginal(userId, imageId));
+    }
+
+    // ------------------------
+    // 로그아웃/정지 시 pending만 삭제 - 사용자가 로그아웃하거나 계정을 정지시킬 때 대기열만 정리
+    // ------------------------
+    public void clearPendingImages(Long userId) {
+        String pendingKey = keyPendingQueue(userId);
+        List<String> pendingList = redisTemplate.opsForList().range(pendingKey, 0, -1);
+
+        if (pendingList != null) {
+            for (String imageIdStr : pendingList) {
+                Long imageId = Long.parseLong(imageIdStr);
+                redisBytesTemplate.delete(keyOriginal(userId, imageId));
+            }
+        }
+
+        redisTemplate.delete(pendingKey);
+    }
+
+    // 새 imageId를 대기열에 넣음(LPUSH) -> 워커가 나중에 RPOP 으로 꺼내감(FIFO 유지)
+    public void enqueueImage(Long userId, Long imageId) {
+        String pendingKey = keyPendingQueue(userId);
+        String statusKey = "screenshot:status:" + userId + ":" + imageId;
+
+        // 워커는 RPOP 으로 가장 먼저들어온(가장 왼쪽에 배치한 - left) 을 먼저 꺼내감
+        redisTemplate.opsForList().leftPush(pendingKey, String.valueOf(imageId));
+
+        redisTemplate.opsForValue().set(statusKey, "QUEUED");
+        redisTemplate.expire(statusKey, TTL_ORIG);
+    }
+
+    // ensure imageId exists in pending; if not, push it
+    public void ensurePending(Long userId, Long imageId) {
+        String pendingKey = keyPendingQueue(userId);
+        List<String> pending = redisTemplate.opsForList().range(pendingKey, 0, -1);
+        String idStr = String.valueOf(imageId);
+        boolean contains = (pending != null && pending.contains(idStr));
+        if (!contains) {
+            redisTemplate.opsForList().leftPush(pendingKey, idStr);
+            // set status if absent
+            String statusKey = "screenshot:status:" + userId + ":" + imageId;
+            String existing = redisTemplate.opsForValue().get(statusKey);
+            if (existing == null) {
+                redisTemplate.opsForValue().set(statusKey, "QUEUED");
+                redisTemplate.expire(statusKey, TTL_ORIG);
+            }
+        }
     }
 
     public record Candidate(Long imageId, long hash) {
