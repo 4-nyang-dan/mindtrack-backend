@@ -249,7 +249,7 @@ public class ScreenshotImageCacheService {
         redisTemplate.expire(statusKey, TTL_ORIG);
     }
 
-    // ensure imageId exists in pending; if not, push it
+    // pending에 이미 imageId가 들어있는지 조회(range) 하고, 없으면 LPUSH로 추가.
     public void ensurePending(Long userId, Long imageId) {
         String pendingKey = keyPendingQueue(userId);
         List<String> pending = redisTemplate.opsForList().range(pendingKey, 0, -1);

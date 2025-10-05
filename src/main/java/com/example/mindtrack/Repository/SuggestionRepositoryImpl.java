@@ -1,4 +1,5 @@
 package com.example.mindtrack.Repository;
+
 import com.example.mindtrack.DTO.Suggestion;
 import com.example.mindtrack.DTO.SuggestionPayload;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -24,10 +25,8 @@ public class SuggestionRepositoryImpl implements SuggestionRepository {
                 "SELECT user_id, created_at FROM suggestions WHERE id = ?",
                 (rs, rowNum) -> Map.of(
                         "userId", rs.getString("user_id"),
-                        "createdAt", rs.getTimestamp("created_at").toInstant().toString()
-                ),
-                id
-        );
+                        "createdAt", rs.getTimestamp("created_at").toInstant().toString()),
+                id);
 
         var items = findSuggestionsJsonByPayloadId(id).stream()
                 .flatMap(Optional::stream)
@@ -48,10 +47,10 @@ public class SuggestionRepositoryImpl implements SuggestionRepository {
         List<Long> ids = jdbc.query(
                 "SELECT id FROM suggestions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
                 (rs, rowNum) -> rs.getLong("id"),
-                userId
-        );
+                userId);
 
-        if (ids.isEmpty()) return Optional.empty();
+        if (ids.isEmpty())
+            return Optional.empty();
 
         return findSuggestionPayloadById(ids.get(0));
     }
@@ -61,8 +60,7 @@ public class SuggestionRepositoryImpl implements SuggestionRepository {
         var list = jdbc.queryForList(
                 "SELECT row_to_json(i)::text FROM suggestion_items i WHERE i.suggestion_id = ?",
                 String.class,
-                payloadId
-        );
+                payloadId);
         return list.stream().map(Optional::ofNullable).toList();
     }
 }
