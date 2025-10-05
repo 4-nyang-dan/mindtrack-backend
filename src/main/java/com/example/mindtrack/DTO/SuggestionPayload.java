@@ -1,13 +1,34 @@
 package com.example.mindtrack.DTO;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-
+import com.example.mindtrack.Domain.Suggestion;
+import com.example.mindtrack.Domain.SuggestionItem;
+import java.time.LocalDateTime;
 import java.util.List;
 
-@JsonIgnoreProperties(ignoreUnknown = true)
 public record SuggestionPayload(
         Long id,
-        String userId,          // 디버깅용
-        String createdAt,       // ISO-8601 문자열
-        List<Suggestion> suggestions
-) { }
+        String userId,
+        LocalDateTime createdAt,
+        List<QuestionDto> questions,
+        SuggestionDto suggestion
+) {
+    public static SuggestionPayload fromEntity(Suggestion s) {
+        List<QuestionDto> questionDtos = s.getItems().stream()
+                .map(i -> new QuestionDto(i.getQuestion()))
+                .toList();
+
+        SuggestionDto suggestionDto = new SuggestionDto(
+                s.getRepresentativeImage(),
+                s.getDescription(),
+                s.getPredictedActions()
+        );
+
+        return new SuggestionPayload(
+                s.getId(),
+                s.getUserId(),
+                s.getCreatedAt(),
+                questionDtos,
+                suggestionDto
+        );
+    }
+}
