@@ -26,7 +26,7 @@ public class SuggestionsController {
     private final UserRepository userRepository;
     private final JwtUtil jwtUtil;
 
-    @GetMapping("/latest")
+/*    @GetMapping("/latest")
     public ResponseEntity<SuggestionPayload> latest(Authentication authentication) {
         String userId = (String) authentication.getPrincipal(); // principal은 userId 문자열
         log.info("suggestion latest 로그: Authentication 유저아이디 ={}", userId);
@@ -37,13 +37,13 @@ public class SuggestionsController {
         log.info("suggestion latest 로그: Authentication 유저 bigint -> text 아이디 ={}", userIdStr);
 
         return ResponseEntity.of(suggestionRepository.findLatestSuggestionPayloadByUser(userIdStr));
-    }
+    }*/
 
     @GetMapping(value="/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(
             @RequestParam("token") String token,
             @RequestHeader(value="Last-Event-ID", required = false) String lastEventId
-    ) throws IOException {
+    ) {
         log.info("token: {}", token);
         String userId = jwtUtil.extractUserId(token);
 

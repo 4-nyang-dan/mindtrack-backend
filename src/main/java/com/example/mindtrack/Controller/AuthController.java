@@ -24,8 +24,8 @@ public class AuthController {
         return authService.login(req);
     }
 
-    @PostMapping("/logout")
+/*    @PostMapping("/logout")
     public AuthResponse logout(@Valid @RequestBody LogoutReqest req) {
         return authService.logout(req);
-    }
+    }*/
 }

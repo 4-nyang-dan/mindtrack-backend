@@ -1,6 +1,4 @@
 package com.example.mindtrack.SSE;
-
-import com.example.mindtrack.DTO.Suggestion;
 import com.example.mindtrack.DTO.SuggestionPayload;
 import com.example.mindtrack.Repository.SuggestionRepository;
 import com.example.mindtrack.Service.SuggestionService;
@@ -18,6 +16,7 @@ import org.postgresql.PGNotification;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Optional;
@@ -98,6 +97,9 @@ public class PgSuggestionsListener implements InitializingBean, DisposableBean {
         pg = conn.unwrap(PGConnection.class);
         try (Statement st = conn.createStatement()) {
             st.execute("LISTEN " + CHANNEL);
+        }catch (SQLException e) { // keepalive 쿼리 실패 시 바로 재연결하도록 catch 추가
+            log.warn("keepalive query failed, reconnecting...", e);
+            throw e; // 상위에서 backoff 루프가 재연결 처리
         }
         log.info("LISTEN attached on channel {}", CHANNEL);
     }
@@ -110,52 +112,42 @@ public class PgSuggestionsListener implements InitializingBean, DisposableBean {
             }
 
             // 2) 알림 처리
-            PGNotification[] notes = pg.getNotifications();
+            PGNotification[] notes = pg.getNotifications(1000);
             if (notes != null) {
                 for (PGNotification n : notes) {
                     handleNotificationSafe(n);
                 }
             }
 
-            // 3) 과도 루프 방지
-            Thread.sleep(700); // 0.7s (환경에 맞게 300~1000ms 조정)
+            // 3) 과도 루프 방지 -> 위 getNotifications에서 timeoutMillis=1000으로 설정
+            // ->> SELECT 1 불필요 + 폴링 효율 상승
+            // Thread.sleep(700); // 0.7s (환경에 맞게 300~1000ms 조정)
         }
     }
 
     private void handleNotificationSafe(PGNotification notice){
         try{
             JsonNode node = om.readTree(notice.getParameter());
-            Long id = node.hasNonNull("id")
-                    ? (node.get("id").isNumber()
-                    ? node.get("id").asLong()
-                    : Long.parseLong(node.get("id").asText()))
-                    : null;
+            Long id = null;
+            try {
+                id = node.hasNonNull("id") ? node.get("id").asLong() : null;
+            } catch (Exception e) {
+                log.info("Invalid id in payload: {}", node.toPrettyString());
+            }
             String userId = node.hasNonNull("userId") ? node.get("userId").asText() : null;
             if(id == null || userId == null || userId.isBlank()){
-                log.warn("invalid payload: {}", notice.getParameter());
+                log.info("invalid payload: {}", notice.getParameter());
                 return;
             }
 
             //아래 조회/가공은 메인 풀(DataSource) 사용하는 Service/Repository에서 수행됨
-            suggestionRepository.findSuggestionPayloadById(id).ifPresent(payload -> {
-                try {
-                    List<Suggestion> suggestions = suggestionService.findSuggestionByPayloadId(payload.id()).stream()
-                            .flatMap(Optional::stream)
-                            .toList();
-
-                    SuggestionPayload enrichedPayload = new SuggestionPayload(
-                            payload.id(),
-                            payload.userId(),
-                            payload.createdAt(),
-                            suggestions
-                    );
-                    hub.publish(userId, enrichedPayload, String.valueOf(id));
-                }catch(Exception e){
-                    log.warn("publish failed for id={}, user={}, error={}", id, userId, e.getMessage());
-                }
+            Long finalId = id;
+            suggestionRepository.findById(id).ifPresent(s -> {
+                SuggestionPayload payload = SuggestionPayload.fromEntity(s);
+                hub.publish(s.getUserId(), payload, String.valueOf(finalId));
             });
         } catch (Exception e){
-            log.warn("payload parse error: {}, {}", notice.getParameter(), e.getMessage());
+            log.info("payload parse error: {}, {}", notice.getParameter(), e.getMessage());
         }
     }
 
@@ -173,11 +165,13 @@ public class PgSuggestionsListener implements InitializingBean, DisposableBean {
         try { Thread.sleep(ms); } catch (InterruptedException ignored) {}
     }
 
-    @Override public void destroy() {
+    @Override
+    public void destroy() {
         running = false;
+        Thread.currentThread().interrupt(); // 추가
         unlistenQuiet();
         closeQuietly(conn);
-        // executor 정리
         netTimeoutExecutor.shutdownNow();
     }
+
 }

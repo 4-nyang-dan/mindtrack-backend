@@ -1,5 +1,6 @@
+/*
 package com.example.mindtrack.Repository;
-import com.example.mindtrack.DTO.Suggestion;
+import com.example.mindtrack.Domain.Suggestion;
 import com.example.mindtrack.DTO.SuggestionPayload;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -66,3 +67,4 @@ public class SuggestionRepositoryImpl implements SuggestionRepository {
         return list.stream().map(Optional::ofNullable).toList();
     }
 }
+*/
