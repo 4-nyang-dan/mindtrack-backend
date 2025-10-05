@@ -9,11 +9,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 @Getter
 @Setter
 public class AnalysisResultDto {
+    @JsonProperty("user_id")
     private String userId;
 
-    @JsonProperty("imageIds") // payload 에서 보낸 필드명과 일치 시킨다.
+    @JsonProperty("image_id") // payload 에서 보낸 필드명과 일치 시킨다.
     private Long imageId;
-    
+
     private SuggestionDto suggestion;
 
     @JsonProperty("predicted_questions")

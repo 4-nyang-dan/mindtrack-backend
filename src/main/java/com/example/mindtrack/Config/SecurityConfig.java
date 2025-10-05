@@ -26,6 +26,11 @@ public class SecurityConfig {
                 http
                                 .csrf(csrf -> csrf.disable())
                                 .authorizeHttpRequests(auth -> auth
+                                                .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                                                // ✅ FastAPI → Spring 콜백 허용
+                                                // "/analysis/result" 은 FastAPI가 Spring으로 보내는 콜백 엔드포인트이기 때문에 JWT 인증 없이
+                                                // 접근해야 하는 “외부 시스템 전용” 엔드포인트
+                                                .requestMatchers("/analysis/result").permitAll()
                                                 .requestMatchers(
                                                                 "/swagger-ui/**",
                                                                 "/swagger-ui.html",
