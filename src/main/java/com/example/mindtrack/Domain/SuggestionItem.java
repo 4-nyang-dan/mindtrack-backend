@@ -5,21 +5,29 @@ import lombok.Getter;
 import lombok.Setter;
 import java.util.UUID;
 
-@Setter
+/**
+ * Suggestion 하위의 개별 질문(예측 질의)
+ * - Suggestion과 다대일 관계
+ */
 @Getter
+@Setter
 @Entity
 @Table(name = "suggestion_items")
 public class SuggestionItem {
+
     @Id
     @GeneratedValue
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "suggestion_id")
+    @JoinColumn(name = "suggestion_id", nullable = false)
     private Suggestion suggestion;
 
-    @Column(nullable = false)
+    // 질문 내용
+    @Column(nullable = false, columnDefinition = "TEXT")
     private String question;
 
-    private String answer; // 현재 null 허용 - 클릭 시 AI 호출 후 다시 저장
+    /*// AI 답변 (초기 null, 추후 갱신 가능)
+    @Column(columnDefinition = "TEXT")
+    private String answer;*/
 }

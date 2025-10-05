@@ -60,38 +60,82 @@ public class SimilarityCheckService {
      * @return SSIM 유사도 (double)
      */
     public double computeSimilarity(BufferedImage img1, BufferedImage img2) {
-        // 1. 같은 크기로 변환 (리사이즈)
-        int width = 256;
-        int height = 256;
+        // 1. 다운스케일 크기 설정
+        int width = 128;
+        int height = 128;
 
+        // 2. 그레이스케일 변환 및 리사이즈
         BufferedImage gray1 = resizeAndGrayscale(img1, width, height);
         BufferedImage gray2 = resizeAndGrayscale(img2, width, height);
 
-        // 2. 각 이미지 픽셀 배열 생성
-        double[][] pixels1 = getLuminanceMatrix(gray1);
-        double[][] pixels2 = getLuminanceMatrix(gray2);
+        // 3. SSIM을 타일 단위로 계산
+        int tileCountX = 4;
+        int tileCountY = 4;
+        int tileW = width / tileCountX;
+        int tileH = height / tileCountY;
 
-        // 3. 평균 밝기
-        // 이미지의 전체적인 밝기 수준을 계산
-        double mu1 = mean(pixels1);
-        double mu2 = mean(pixels2);
+        double totalSsim = 0.0;
+        int tileNum = 0;
 
-        // 4. 분산
-        // 픽셀 값의 퍼짐 정도(대비)
-        // (각 픽셀 - 평균)^2의 평균값 (평균에서 각 픽셀들이 얼마나 떨어져있는지)
-        double sigma1Sq = variance(pixels1, mu1);
-        double sigma2Sq = variance(pixels2, mu2);
+        for (int ty = 0; ty < tileCountY; ty++) {
+            for (int tx = 0; tx < tileCountX; tx++) {
+                // ROI(Region of Interest) 영역 지정
+                int startX = tx * tileW;
+                int startY = ty * tileH;
 
-        // 5. 공분산
-        // 두 이미지가 같은 위치에서 얼마나 함께 밝거나 어두운지 (구조적 유사성 측정)
-        double sigma12 = covariance(pixels1, pixels2, mu1, mu2);
+                double[][] pixels1 = getLuminanceMatrix(gray1, startX, startY, tileW, tileH);
+                double[][] pixels2 = getLuminanceMatrix(gray2, startX, startY, tileW, tileH);
 
-        // 6. SSIM 계산 공식은 .. 인터넷에서 보고~ 그냥 그렇구나~ 이해 불가
-        double numerator = (2 * mu1 * mu2 + C1) * (2 * sigma12 + C2);
-        double denominator = (mu1 * mu1 + mu2 * mu2 + C1) * (sigma1Sq + sigma2Sq + C2);
+                // 타일별 평균/분산/공분산 계산
+                double mu1 = mean(pixels1);
+                double mu2 = mean(pixels2);
+                double sigma1Sq = variance(pixels1, mu1);
+                double sigma2Sq = variance(pixels2, mu2);
+                double sigma12 = covariance(pixels1, pixels2, mu1, mu2);
 
-        return numerator / denominator;
+                double numerator = (2 * mu1 * mu2 + C1) * (2 * sigma12 + C2);
+                double denominator = (mu1 * mu1 + mu2 * mu2 + C1) * (sigma1Sq + sigma2Sq + C2);
+                if (denominator == 0) {
+                    return 0; // 계산 불가능한 경우 0으로 처리
+                }
+                double ssim = numerator / denominator;
+
+
+                totalSsim += ssim;
+                tileNum++;
+            }
+        }
+
+        // 4. 전체 타일 SSIM 평균 반환
+        return totalSsim / tileNum;
     }
+
+    /**
+     * 이미지의 특정 영역(ROI)을 2차원 밝기 배열로 변환
+     * @param img 대상 이미지
+     * @param startX 영역 시작 X좌표
+     * @param startY 영역 시작 Y좌표
+     * @param w 영역 폭
+     * @param h 영역 높이
+     * @return 선택 영역의 밝기값 행렬
+     */
+    private double[][] getLuminanceMatrix(BufferedImage img, int startX, int startY, int w, int h) {
+        int endX = Math.min(startX + w, img.getWidth());
+        int endY = Math.min(startY + h, img.getHeight());
+        int realW = endX - startX;
+        int realH = endY - startY;
+
+        double[][] matrix = new double[realH][realW];
+        for (int y = 0; y < realH; y++) {
+            for (int x = 0; x < realW; x++) {
+                int rgb = img.getRGB(startX + x, startY + y) & 0xFF;
+                matrix[y][x] = rgb;
+            }
+        }
+        return matrix;
+    }
+
+
 
     /**
      * 입력 이미지를 지정된 크기의 그레이스케일로 변환
@@ -106,25 +150,6 @@ public class SimilarityCheckService {
         g.drawImage(original, 0, 0, width, height, null);
         g.dispose();
         return resized;
-    }
-
-    /**
-     * 이미지로부터 밝기 값을 추출하여 2차원 배열로 반환
-     * @param img
-     * @return
-     */
-    private double[][] getLuminanceMatrix(BufferedImage img){
-        int width = img.getWidth();
-        int height = img.getHeight();
-        double[][] matrix = new double[height][width];
-
-        for(int y = 0; y < height;y++){
-            for(int x = 0; x < width; x++){
-                int rgb = img.getRGB(x, y) & 0xFF;
-                matrix[y][x] = rgb;
-            }
-        }
-        return matrix;
     }
 
     /**
