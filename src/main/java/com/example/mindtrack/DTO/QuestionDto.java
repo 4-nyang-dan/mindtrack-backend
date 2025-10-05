@@ -1,5 +1,7 @@
 package com.example.mindtrack.DTO;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -12,6 +14,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class QuestionDto {
-
+    @JsonProperty("question")
     private String question;
 }
