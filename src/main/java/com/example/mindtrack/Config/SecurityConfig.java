@@ -13,10 +13,6 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 import com.example.mindtrack.Service.CustomUserDetailsService;
 
-
-
-
-
 @Configuration
 @EnableWebSecurity
 @RequiredArgsConstructor

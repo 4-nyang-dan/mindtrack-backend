@@ -24,7 +24,20 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)
             throws ServletException, IOException {
 
+        String path = req.getRequestURI();
+
+        // 인증이 필요 없는 경로는 필터 건너뛰기
+        if (path.startsWith("/api/auth")
+                || path.startsWith("/swagger-ui")
+                || path.startsWith("/v3/api-docs")
+                || path.equals("/upload-screenshot")
+                || path.startsWith("/api/suggestions/stream")) {
+            chain.doFilter(req, res);
+            return;
+        }
+
         String auth = req.getHeader("Authorization");
+
         if (auth != null && auth.startsWith("Bearer ")) {
             String token = auth.substring(7);
             try {

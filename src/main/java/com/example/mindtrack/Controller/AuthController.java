@@ -6,16 +6,21 @@ import com.example.mindtrack.DTO.SignupRequest;
 import com.example.mindtrack.Service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
+@Slf4j
 public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/signup")
     public AuthResponse signup(@Valid @RequestBody SignupRequest req) {
+        log.info("📩 [AuthController.signup] 받은 JSON: " + req);
+        log.info("userId=" + req.getUserId() + ", email=" + req.getEmail() + ", password=" + req.getPassword());
         return authService.signup(req);
     }
 
