@@ -16,7 +16,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-
+import java.util.concurrent.CompletableFuture;
 import java.io.IOException;
 
 @RestController
@@ -83,17 +83,25 @@ public class SuggestionsController {
             @RequestHeader(value = "Last-Event-ID", required = false) String lastEventId) {
         log.info("[SSE] 클라이언트 연결 시도 token={}", token);
 
-        // JWT 직접 검증 (Spring Security 인증 X)
         try {
+            // 1️⃣ JWT에서 userId 추출
             String userId = jwtUtil.extractUserId(token);
-            Users user = userRepository.findByUserId(userId).orElseThrow();
-            String userIdStr = String.valueOf(user.getId());
-            log.info("[SSE] 구독 완료 userId={}", userIdStr);
 
-            return hub.subscribe(userIdStr);
+            // 2️⃣ 실제 DB 상 user 존재 여부 검증
+            Users user = userRepository.findByUserId(userId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not found"));
+
+            String userIdStr = String.valueOf(user.getId());
+            log.info("[SSE] 구독 성공 userId={}", userIdStr);
+
+            // 3️⃣ 기존 허브 로직 사용
+            SseEmitter emitter = hub.subscribe(userIdStr);
+
+            log.info("[SSE] emitter created for user {}", userIdStr);
+            return emitter;
+
         } catch (Exception e) {
             log.warn("[SSE] 토큰 검증 실패: {}", e.getMessage());
-            // 잘못된 토큰이면 401 반환
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid SSE token");
         }
     }

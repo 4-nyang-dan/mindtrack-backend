@@ -26,12 +26,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         String path = req.getRequestURI();
 
-        // 인증이 필요 없는 경로는 필터 건너뛰기
-        if (path.startsWith("/api/auth")
-                || path.startsWith("/swagger-ui")
-                || path.startsWith("/v3/api-docs")
-                || path.equals("/upload-screenshot")
-                || path.startsWith("/api/suggestions/stream")) {
+        // ====== 🔹 SSE 요청은 SecurityContext 점유 방지 ======
+        if (path.startsWith("/api/suggestions/stream")) {
+            SecurityContextHolder.clearContext(); // <- 여기 추가됨
             chain.doFilter(req, res);
             return;
         }
@@ -47,6 +44,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             } catch (Exception ignored) {
                 // 잘못된/만료 토큰 → 인증 미설정 상태로 계속 진행
+                SecurityContextHolder.clearContext();
             }
         }
         chain.doFilter(req, res);

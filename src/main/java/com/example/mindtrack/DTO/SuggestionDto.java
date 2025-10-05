@@ -14,12 +14,12 @@ import java.util.List;
 public class SuggestionDto {
 
     @JsonProperty("representative_image")
-    private String representativeImage;  // 대표 이미지 경로
+    private String representativeImage; // 대표 이미지 경로
 
-    private String description;          // AI 요약 설명
+    private String description; // AI 요약 설명
 
     @JsonProperty("predicted_actions")
-    private List<String> predictedActions;  // 행동 제안 리스트
+    private List<String> predictedActions; // 행동 제안 리스트
 
     public SuggestionDto(String representativeImage, String description, List<String> predictedActions) {
         this.representativeImage = representativeImage;

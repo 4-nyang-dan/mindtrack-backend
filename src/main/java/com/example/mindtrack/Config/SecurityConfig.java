@@ -30,13 +30,14 @@ public class SecurityConfig {
                                                                 "/swagger-ui/**",
                                                                 "/swagger-ui.html",
                                                                 "/v3/api-docs/**",
+                                                                "/api/auth/**",
                                                                 "/upload-screenshot",
-                                                                "/api/suggestions/stream",
-                                                                "/api/auth/**")
+                                                                "/api/suggestions/stream")
                                                 .permitAll()
                                                 .anyRequest().authenticated());
                 http.csrf(csrf -> csrf.disable());
-                http.sessionManagement((session) -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED));
+                http.sessionManagement(session -> session
+                                .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED));
                 http.addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
                 return http.build();
         }
