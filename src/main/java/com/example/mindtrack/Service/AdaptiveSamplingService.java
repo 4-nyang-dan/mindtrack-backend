@@ -33,7 +33,7 @@ public class AdaptiveSamplingService {
     private final SimilarityCheckService similarityCheckService;
     private final ScreenshotImageCacheService screenshotImageCacheService;
 
-    private static final double SIMILARITY_THRESHOLD = 0.85;
+    private static final double SIMILARITY_THRESHOLD = 0.95;
 
     /**
      * 받은 이미지의 샘플링을 진행한다.
@@ -189,6 +189,7 @@ public class AdaptiveSamplingService {
 
         screenshotImageCacheService.cacheRecentImageHash(user.getId(), newImageId, newHash, thumbBytes);
         screenshotImageCacheService.cacheOriginalImage(user.getId(), newImageId, originalBytes);
+
         // 원본 저장 직후 반드시 pending 큐에 enqueue
         screenshotImageCacheService.enqueueImage(user.getId(), newImageId);
 
