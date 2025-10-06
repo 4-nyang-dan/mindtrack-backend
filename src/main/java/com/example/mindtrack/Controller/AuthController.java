@@ -24,4 +24,9 @@ public class AuthController {
         return authService.login(req);
     }
 
+    @GetMapping("/test")
+    public String test() {
+        return "✅ Auth test endpoint OK";
+}
+
 }

@@ -36,6 +36,7 @@ public class SecurityConfig {
                                                                 "/v3/api-docs/**",
                                                                 "/upload-screenshot",
                                                                 "/api/suggestions/stream",
+                                                                "/analysis/**",
                                                                 "/api/auth/**")
                                                 .permitAll()
                                                 .anyRequest().authenticated());

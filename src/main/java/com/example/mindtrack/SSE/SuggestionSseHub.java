@@ -57,4 +57,23 @@ public class SuggestionSseHub {
             }
         }
     }
+
+    public void publishRaw(String userId, Map<String, Object> rawPayload) {
+    var list = emitters.getOrDefault(userId, new CopyOnWriteArrayList<>());
+    for (var em : list) {
+        try {
+            var ev = SseEmitter.event()
+                    .name("suggestions")
+                    .data(rawPayload)
+                    .reconnectTime(3000);
+            em.send(ev);
+        } catch (Exception e) {
+            em.complete();
+            list.remove(em);
+            log.warn("ssehub publish error: " + e.getMessage());
+        }
+    }
+}
+
+
 }
