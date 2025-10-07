@@ -95,7 +95,7 @@ public class SuggestionsController {
             log.info("[SSE] 구독 성공 userId={}", userIdStr);
 
             // 3️⃣ 기존 허브 로직 사용
-            SseEmitter emitter = hub.subscribe(userIdStr);
+            SseEmitter emitter = hub.subscribe(user.getId());
 
             log.info("[SSE] emitter created for user {}", userIdStr);
             return emitter;
