@@ -25,7 +25,7 @@ public class Suggestion {
 
     // 분석 요청자
     @Column(nullable = false)
-    private String userId;
+    private Long userId;
 
     // 연결된 스크린샷 이미지 ID
     private Long imageId;
@@ -38,7 +38,7 @@ public class Suggestion {
     private String description;
 
     // AI가 예측한 행동 목록
-    @ElementCollection
+    @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "suggestion_actions", joinColumns = @JoinColumn(name = "suggestion_id"))
     @Column(name = "action")
     private List<String> predictedActions;
