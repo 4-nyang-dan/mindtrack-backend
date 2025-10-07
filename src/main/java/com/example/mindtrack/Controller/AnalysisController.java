@@ -30,10 +30,11 @@ public class AnalysisController {
     private final SuggestionService suggestionService;
 
     @PostMapping("/result")
-    /*public ResponseEntity<String> receiveResult(@RequestBody AnalysisResultDto dto) {
+    public ResponseEntity<String> receiveResult(@RequestBody AnalysisResultDto dto) {
         suggestionService.saveFromAnalysisResult(dto);
-        return ResponseEntity.ok("결과 수신 완료");*/
-    public ResponseEntity<String> receiveResult(@RequestBody Map<String, Object> payload) {
+        return ResponseEntity.ok("결과 수신 완료");
+    }
+/*    public ResponseEntity<String> receiveResult(@RequestBody Map<String, Object> payload) {
         log.info("📦 받은 분석 결과 전체: {}", payload);
 
         // AI가 보낸 user_id 추출
@@ -54,6 +55,6 @@ public class AnalysisController {
             log.error("❌ SSE publish 실패: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().body("SSE publish failed");
         }
-    }
+    }*/
 }
 
