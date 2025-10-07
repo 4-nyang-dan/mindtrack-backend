@@ -20,7 +20,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @Slf4j
 public class SuggestionSseHub {
     // 사용자별 연결된 SSE Emitter 세션 목록
-    private final ConcurrentMap<String, Set<SseEmitter>> emitters = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Long, Set<SseEmitter>> emitters = new ConcurrentHashMap<>();
     // SSE 기본 timeout: 0은 무제한
     private static final long NO_TIMEOUT = 0L;
 
@@ -29,7 +29,7 @@ public class SuggestionSseHub {
      * @param userId SSE 연결을 식별할 사용자 ID
      * @return SseEmitter객체
      */
-    public SseEmitter subscribe(String userId) {
+    public SseEmitter subscribe(Long userId) {
         SseEmitter em = new SseEmitter(NO_TIMEOUT);
         emitters.computeIfAbsent(userId, k -> ConcurrentHashMap.newKeySet()).add(em);
 
@@ -66,9 +66,12 @@ public class SuggestionSseHub {
      * @param payload 전달할 데이터
      * @param eventId 이벤트 고유 ID(Last-Event-ID 복구용)
      */
-    public void publish(String userId, SuggestionPayload payload, @Nullable String eventId){
+    public void publish(Long userId, SuggestionPayload payload, @Nullable String eventId){
         Set<SseEmitter> list = emitters.get(userId);
-        if(list == null || list.isEmpty()) return;
+        if(list == null || list.isEmpty()) {
+            log.info("⚠️ No SSE subscribers found for userId={}", userId);
+            return;
+        }
 
         for(SseEmitter emitter : list){
             try{
@@ -80,10 +83,11 @@ public class SuggestionSseHub {
                 if(eventId != null) event = event.id(eventId);
 
                 emitter.send(event);
+                log.info("✅ Emitter send complete for userId={}", userId);
             }catch (IOException e) {
-                emitter.complete();
+                log.info("Publish failed for user {} : {}", userId, e.getMessage());
+                emitter.completeWithError(e);
                 list.remove(emitter);
-                log.debug("Publish failed for user {} : {}", userId, e.getMessage());
             }
         }
     }
@@ -111,7 +115,7 @@ public class SuggestionSseHub {
         });
     }
 
-    public void publishRaw(String userId, Map<String, Object> rawPayload) {
+/*    public void publishRaw(String userId, Map<String, Object> rawPayload) {
     var list = emitters.getOrDefault(userId, new CopyOnWriteArrayList<>());
     for (var em : list) {
         try {
@@ -125,8 +129,5 @@ public class SuggestionSseHub {
             list.remove(em);
             log.warn("ssehub publish error: " + e.getMessage());
         }
-    }
-}
-
-
+    }*/
 }
